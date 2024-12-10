@@ -10,56 +10,133 @@ const Comment = require('./models/Comment');
 const app = express();
 app.use(bodyParser.json());
 
-sequelize.sync().then(
-	() => console.log("Database connected"));
+sequelize.sync().then(() => console.log("Database connected"));
 
-app.get('/api/user/:id', async(req, res)=>{
-	const user = await User.findByPk(req.params.id, {include: ['Follows']});
-	res.json(user);
+app.get('/api/user/:id', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
+
+    const user = await User.findByPk(userId, { include: ['Follows'] });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error fetching user', error: error.message });
+  }
 });
 
 app.get('/api/posts', async (req, res) => {
-  const posts = await Post.findAll({ order: [['createdAt', 'DESC']] });
-  res.json(posts);
+  try {
+    const posts = await Post.findAll({ order: [['createdAt', 'DESC']] });
+    res.json(posts);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error fetching posts', error: error.message });
+  }
 });
 
 app.get('/api/posts/:id', async (req, res) => {
-  const post = await Post.findByPk(req.params.id, { include: 
-    [
-      {
+  try {
+    const postId = parseInt(req.params.id, 10);
+    if (isNaN(postId)) {
+      return res.status(400).json({ message: 'Invalid post ID format' });
+    }
+
+    const post = await Post.findByPk(postId, {
+      include: [
+        {
           model: User,
-          as: 'LikedUsers',  
-          attributes: ['id', 'username'],  
-          through: { attributes: [] }  
-        }, 
-      Comment] 
-  });
-  res.json(post);
+          as: 'LikedUsers',
+          attributes: ['id', 'username'],
+          through: { attributes: [] }
+        },
+        Comment
+      ]
+    });
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    res.json(post);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error fetching post', error: error.message });
+  }
 });
 
 app.post('/api/posts', async (req, res) => {
-  const post = await Post.create({
-    title: req.body.title,
-    desc: req.body.desc,
-    author: req.body.author || 1,
-  });
-  res.json(post);
+  try {
+    const { title, desc, author } = req.body;
+    if (!title || !desc) {
+      return res.status(400).json({ message: 'Title and description are required' });
+    }
+
+    const newPost = await Post.create({
+      title,
+      desc,
+      author: author || 1
+    });
+
+    res.status(201).json(newPost);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error creating post', error: error.message });
+  }
 });
 
 app.put('/api/posts/:id', async (req, res) => {
-  await Post.update(req.body, { where: { id: req.params.id } });
-  res.json({ message: 'Post updated' });
+  try {
+    const postId = parseInt(req.params.id, 10);
+    if (isNaN(postId)) {
+      return res.status(400).json({ message: 'Invalid post ID format' });
+    }
+
+    const [updatedRows] = await Post.update(req.body, { where: { id: postId } });
+    if (updatedRows === 0) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    res.json({ message: 'Post updated' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error updating post', error: error.message });
+  }
 });
 
 app.delete('/api/posts/:id', async (req, res) => {
-  await Post.destroy({ where: { id: req.params.id } });
-  res.json({ message: 'Post deleted' });
+  try {
+    const postId = parseInt(req.params.id, 10);
+    if (isNaN(postId)) {
+      return res.status(400).json({ message: 'Invalid post ID format' });
+    }
+
+    const deletedRows = await Post.destroy({ where: { id: postId } });
+    if (deletedRows === 0) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    res.json({ message: 'Post deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error deleting post', error: error.message });
+  }
 });
 
 app.post('/api/follow/:id', async (req, res) => {
   try {
     const { userId } = req.body;
-    const followeeId = req.params.id;
+    const followeeId = parseInt(req.params.id, 10);
+
+    if (isNaN(followeeId) || isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
 
     const follower = await User.findByPk(userId);
     if (!follower) {
@@ -71,10 +148,7 @@ app.post('/api/follow/:id', async (req, res) => {
       return res.status(404).json({ message: 'User to follow not found' });
     }
 
-    console.log(`trying to follow: ${userId}, ${followeeId}`);
-
-    await Follow.create({ followerId: userId, followeeId: followeeId });
-
+    await Follow.create({ followerId: userId, followeeId });
     res.json({ message: 'Followed user' });
   } catch (error) {
     console.error(error);
@@ -82,35 +156,45 @@ app.post('/api/follow/:id', async (req, res) => {
   }
 });
 
-
 app.post('/api/unfollow/:id', async (req, res) => {
-
   try {
-	     const { userId } = req.body;
-	     const followeeId = req.params.id;
+    const { userId } = req.body;
+    const followeeId = parseInt(req.params.id, 10);
 
-    	const follower = await User.findByPk(userId);
-    		if (!follower) {
-      		return res.status(404).json({ message: 'Follower user not found' });
-    	}
+    if (isNaN(followeeId) || isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
 
-      const userToFollow = await User.findByPk(followeeId);
-      if (!userToFollow) {
-          return res.status(404).json({ message: 'User to follow not found' });
-      }
+    const follower = await User.findByPk(userId);
+    if (!follower) {
+      return res.status(404).json({ message: 'Follower user not found' });
+    }
 
-  	 await Follow.destroy({ where: { followerId: userId, followeeId: followeeId } });
-  	 res.json({ message: 'Unfollowed user' });
+    const userToFollow = await User.findByPk(followeeId);
+    if (!userToFollow) {
+      return res.status(404).json({ message: 'User to unfollow not found' });
+    }
+
+    const deleted = await Follow.destroy({ where: { followerId: userId, followeeId } });
+    if (deleted) {
+      res.json({ message: 'Unfollowed user' });
+    } else {
+      res.status(404).json({ message: 'Follow relationship not found' });
+    }
   } catch (error) {
-	console.error(error);
-    	res.status(500).json({ message: 'Error unfollowing user', error: error.message });
-	}
+    console.error(error);
+    res.status(500).json({ message: 'Error unfollowing user', error: error.message });
+  }
 });
 
 app.post('/api/like/:id', async (req, res) => {
   try {
     const { userId } = req.body;
-    const postId = req.params.id;
+    const postId = parseInt(req.params.id, 10);
+
+    if (isNaN(postId) || isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user or post ID format' });
+    }
 
     const user = await User.findByPk(userId);
     if (!user) {
@@ -125,7 +209,7 @@ app.post('/api/like/:id', async (req, res) => {
     await Like.create({ userId, postId });
     res.json({ message: 'Post liked' });
   } catch (error) {
-    console.error(`Error liking post: ${error}`);
+    console.error(error);
     res.status(500).json({ message: 'Error liking post', error: error.message });
   }
 });
@@ -133,7 +217,11 @@ app.post('/api/like/:id', async (req, res) => {
 app.post('/api/unlike/:id', async (req, res) => {
   try {
     const { userId } = req.body;
-    const postId = req.params.id;
+    const postId = parseInt(req.params.id, 10);
+
+    if (isNaN(postId) || isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user or post ID format' });
+    }
 
     const user = await User.findByPk(userId);
     if (!user) {
@@ -152,45 +240,56 @@ app.post('/api/unlike/:id', async (req, res) => {
       res.status(404).json({ message: 'Like not found' });
     }
   } catch (error) {
-    console.error(`Error unliking post: ${error}`);
+    console.error(error);
     res.status(500).json({ message: 'Error unliking post', error: error.message });
   }
 });
 
-
 app.post('/api/comment/:id', async (req, res) => {
-  
-  const { userId } = req.body;
-  const user = await User.findByPk(userId);
-  
-  if (!user) {
+  try {
+    const { userId, comment } = req.body;
+    const postId = parseInt(req.params.id, 10);
+
+    if (isNaN(postId) || isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user or post ID format' });
+    }
+
+    if (!comment) {
+      return res.status(400).json({ message: 'Comment is required' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-  const postId = req.params.id; 
-  console.log(`postId = ${postId}`);
-  const post = await Post.findByPk(postId);
+    const post = await Post.findByPk(postId);
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-  const comment = await Comment.create({
-    comment: req.body.comment,
-    userId: userId,
-    postId: postId,
-  });
-  res.json(comment);
+    const newComment = await Comment.create({
+      comment,
+      userId,
+      postId
+    });
+
+    res.status(201).json(newComment);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error adding comment', error: error.message });
+  }
 });
 
 app.post('/api/users', async (req, res) => {
   try {
-    const { username, email } = req.body; // Извлечение данных из запроса
+    const { username, email } = req.body;
     if (!username || !email) {
       return res.status(400).json({ message: 'Username and email are required' });
     }
-    
+
     const newUser = await User.create({ username, email });
-    res.status(201).json(newUser); 
+    res.status(201).json(newUser);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error creating user', error: error.message });
@@ -198,4 +297,3 @@ app.post('/api/users', async (req, res) => {
 });
 
 app.listen(8000, () => console.log('Server running on port 8000'));
-
