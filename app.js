@@ -112,19 +112,17 @@ app.put('/api/posts/:id', async (req, res) => {
 
 app.delete('/api/posts/:id', async (req, res) => {
   try {
-    const postId = parseInt(req.params.id, 10);
-    if (isNaN(postId)) {
-      return res.status(400).json({ message: 'Invalid post ID format' });
-    }
+    const postId = req.params.id;
 
-    const deletedRows = await Post.destroy({ where: { id: postId } });
-    if (deletedRows === 0) {
+    const post = await Post.findByPk(postId);
+    if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
 
+    await Post.destroy({ where: { id: postId } });
     res.json({ message: 'Post deleted' });
   } catch (error) {
-    console.error(error);
+    console.error(`Error deleting post: ${error}`);
     res.status(500).json({ message: 'Error deleting post', error: error.message });
   }
 });
